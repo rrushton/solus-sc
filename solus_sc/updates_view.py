@@ -11,7 +11,7 @@
 #  (at your option) any later version.
 #
 
-from gi.repository import Gtk, GLib, GObject, Pango
+from gi.repository import Gtk, Gdk, GLib, GObject, Pango, GdkPixbuf
 from .util import sc_format_size_local
 from operator import attrgetter
 import threading
@@ -19,6 +19,7 @@ import threading
 import pisi.api
 import os
 import re
+import cairo
 
 
 PACKAGE_ICON_SECURITY = "security-high-symbolic"
@@ -247,6 +248,8 @@ class ScUpdatesView(Gtk.VBox):
     load_page = None
     basket = None
 
+    icon_theme = Gtk.IconTheme.get_for_screen (Gdk.Screen.get_default ());
+
     def perform_refresh(self, btn, wdata=None):
         self.perform_refresh_internal()
 
@@ -411,10 +414,13 @@ class ScUpdatesView(Gtk.VBox):
         model = self.tview.get_model()
         model[path][0] = not model[path][0]
 
+    def get_icon_pixbuf(self, icon_name):
+        return self.icon_theme.load_icon (icon_name, Gtk.IconSize.MENU, 0);
+
     def init_view(self):
         # Install? Modifiable? Display label | Size | Image | Sensitive | iSize
         # | UpdateObject
-        model = Gtk.TreeStore(bool, bool, str, str, str, bool, int,
+        model = Gtk.TreeStore(bool, bool, str, str, GdkPixbuf.Pixbuf, bool, int,
                               ScUpdateObject)
         self.selected_object = None
 
@@ -423,19 +429,19 @@ class ScUpdatesView(Gtk.VBox):
                   "These updates are mandatory and will be selected " \
                   "automatically."
         row_m = model.append(None, [True, False, m_label, None,
-                                    PACKAGE_ICON_MANDATORY, True, 0, None])
+                                    self.get_icon_pixbuf(PACKAGE_ICON_MANDATORY), True, 0, None])
         # Security row
         s_label = "<b>Security Updates</b>\n" \
                   "These updates are strongly recommended to support safe " \
                   "usage of your device."
         row_s = model.append(None, [False, True, s_label, None,
-                                    PACKAGE_ICON_SECURITY, True, 0, None])
+                                    self.get_icon_pixbuf(PACKAGE_ICON_SECURITY), True, 0, None])
         # All other updates
         u_label = "<b>Other Updates</b>\n" \
                   "These updates may introduce new software versions and " \
                   "bug-fixes."
         row_u = model.append(None, [False, True, u_label, None,
-                                    PACKAGE_ICON_NORMAL, True, 0, None])
+                                    self.get_icon_pixbuf(PACKAGE_ICON_NORMAL), True, 0, None])
 
         self.tview.set_model(model)
 
@@ -446,6 +452,10 @@ class ScUpdatesView(Gtk.VBox):
         # Expand with a plan operation to be up front about new deps
         upgrades = pisi.api.list_upgradable()
         n_updates = len(upgrades)
+
+        count_normal = 0;
+        count_security = 0;
+        count_mandatory = 0;
 
         for item in sorted(upgrades):
             new_pkg = self.packagedb.get_package(item)
@@ -459,8 +469,10 @@ class ScUpdatesView(Gtk.VBox):
             if new_pkg.partOf == "system.base":
                 systemBase = True
                 parent_row = row_m
+                count_mandatory += 1
             else:
                 parent_row = row_u
+                count_normal += 1
 
             if self.installdb.has_package(item):
                 old_pkg = self.installdb.get_package(item)
@@ -470,6 +482,7 @@ class ScUpdatesView(Gtk.VBox):
             if sc_obj.is_security_update() and parent_row != row_m:
                 parent_row = row_s
                 icon = PACKAGE_ICON_SECURITY
+                count_security += 1
 
             summary = str(new_pkg.summary)
             if len(summary) > 76:
@@ -491,7 +504,7 @@ class ScUpdatesView(Gtk.VBox):
                                                       summary)
 
             model.append(parent_row, [systemBase, not systemBase,
-                                      p_print, dlSize, icon, True, pkgSize,
+                                      p_print, dlSize, self.get_icon_pixbuf(icon), True, pkgSize,
                                       sc_obj])
 
         # Disable empty rows
@@ -503,13 +516,42 @@ class ScUpdatesView(Gtk.VBox):
 
         # Hook up events so we know what's going on (4 non blondes.)
         self.update_from_selection()
+
         model.connect_after('row-changed', self.on_model_row_changed)
+
         if n_updates < 1:
             print("Nuh uh, only {} updates".format(n_updates))
             self.stack.set_visible_child_name("check")
         else:
             print("Ermagahd {} updates".format(n_updates))
             self.stack.set_visible_child_name("updates")
+
+        if (count_normal > 0):
+            pbuf = self.get_icon_pixbuf(PACKAGE_ICON_NORMAL);
+            cairo_t = Gdk.cairo_create( self.get_toplevel().get_window());
+            Gdk.cairo_set_source_pixbuf(cairo_t, pbuf, 0, 0)
+
+            cairo_t.set_source_rgb(0, 0, 0)
+            cairo_t.select_font_face("Sans", cairo.FONT_SLANT_NORMAL,
+                cairo.FONT_WEIGHT_NORMAL)
+            cairo_t.set_font_size(20)
+            cairo_t.move_to(10, 50)
+            cairo_t.show_text("{}".format(count_normal))
+            #cairo_t.paint();
+
+            #icon = Gdk.pixbuf_get_from_surface(cairo_t.get_target(), 0, 0, cairo_t.get_target().get_width(), cairo_t.get_target().get_height());
+            #model.set_value(row_u, 4, icon )
+
+
+        if (count_mandatory > 0):
+            pass
+
+
+        if (count_security > 0):
+            pass
+
+
+
         return False
 
     should_ignore = False
