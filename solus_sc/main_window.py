@@ -17,6 +17,7 @@ from .package_view import ScPackageView
 from .sidebar import ScSidebar
 from .updates_view import ScUpdatesView
 from .basket import BasketView
+from .progress import ScProgressWidget
 from gi.repository import Gtk, GLib
 import sys
 import threading
@@ -46,6 +47,22 @@ class ScMainWindow(Gtk.ApplicationWindow):
 
     prev_button = None
 
+    app = None
+
+    # Default open mode
+    mode_open = None
+    action_bar = None
+
+    def show_updates(self):
+        """ Switch to updates view """
+        self.sidebar.preselect_row("updates")
+
+    def do_delete_event(self, event, udata=None):
+        """ For now just propagate the event """
+        print("Bye :(")
+        self.app.window_closed()
+        return False
+
     def handle_back(self, btn, udata=None):
         """ Handle back navigation """
         nom = self.stack.get_visible_child_name()
@@ -73,8 +90,10 @@ class ScMainWindow(Gtk.ApplicationWindow):
         self.updates_view.init_view()
 
     def init_view(self):
-        self.stack.set_visible_child_name("home")
+        """ Our first ever show """
         self.sidebar_revealer.set_reveal_child(True)
+        self.sidebar.preselect_row(self.mode_open)
+        self.stack.set_visible_child_name(self.mode_open)
         t = threading.Thread(target=self.init_children)
         t.start()
         return False
@@ -85,6 +104,8 @@ class ScMainWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         Gtk.ApplicationWindow.__init__(self, application=app)
 
+        self.app = app
+        self.mode_open = "home"
         self.appsystem = AppSystem()
 
         # !!HAX!! - we're missing a .desktop file atm. shush.
@@ -119,6 +140,7 @@ class ScMainWindow(Gtk.ApplicationWindow):
         self.groups_view = ScGroupsView(self)
 
         self.basket = BasketView(None, None)
+        self.action_bar = ScProgressWidget()
 
         # Main horizontal layout (Sidebar|VIEW)
         self.main_layout = Gtk.HBox(0)
@@ -132,7 +154,11 @@ class ScMainWindow(Gtk.ApplicationWindow):
         sep = Gtk.Separator()
         sep.set_orientation(Gtk.Orientation.VERTICAL)
         self.main_layout.pack_start(sep, False, False, 0)
-        self.main_layout.pack_start(self.stack, True, True, 0)
+
+        tmpvbox = Gtk.VBox(0)
+        tmpvbox.pack_start(self.stack, True, True, 0)
+        tmpvbox.pack_start(self.action_bar, False, False, 0)
+        self.main_layout.pack_start(tmpvbox, True, True, 0)
 
         # Dummy view for first time showing the application
         self.dummy_widget = Gtk.EventBox()

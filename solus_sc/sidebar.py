@@ -37,6 +37,15 @@ class ScSidebar(Gtk.ListBox):
         self.parent_stack.set_visible_child_name(child.row_entry)
         self.owner.update_back(child.row_entry)
 
+    def preselect_row(self, nom):
+        """ Select the named row consistently """
+        for row in self.get_children():
+            child = row.get_child()
+            if child.row_entry == nom:
+                self.select_row(row)
+                self.queue_draw()
+                break
+
     def __init__(self, owner, parent_stack):
         Gtk.ListBox.__init__(self)
 
@@ -56,7 +65,6 @@ class ScSidebar(Gtk.ListBox):
             ("updates", "Updates", "software-update-available-symbolic"),
             ("installed", "Installed", "computer-symbolic"),
             ("3rd-party", "Third Party", "folder-download-symbolic"),
-            ("basket", "Basket", "emblem-synchronizing-symbolic"),
             ("settings", "Settings", "system-run-symbolic"),
         ]
 
@@ -82,10 +90,6 @@ class ScSidebar(Gtk.ListBox):
                 sel = row
 
             self.add(row)
-
-            if item == "basket":
-                row.get_parent().get_style_context().add_class("basket-case")
-            row.get_parent().get_style_context().add_class("sidebar-item")
 
         self.select_row(sel.get_parent())
         self.connect("row-selected", self.on_row_selected)
