@@ -20,7 +20,7 @@ import pisi.api
 import os
 import re
 import cairo
-
+from math import pi
 
 PACKAGE_ICON_SECURITY = "security-high-symbolic"
 PACKAGE_ICON_NORMAL = "software-update-available-symbolic"
@@ -277,6 +277,53 @@ class ScUpdatesView(Gtk.VBox):
         self.basket.invalidate_all()
         GObject.idle_add(self.init_view)
 
+    def draw_rounded(self, cr, x, y, width, height, radius):
+        corner_radius = height / 10.0;
+        degrees = pi / 180.0;
+
+        cr.arc(x + width - radius, y + radius, radius, -90 * degrees, 0 * degrees);
+        cr.arc(x + width - radius, y + height - radius, radius, 0 * degrees, 90 * degrees);
+        cr.arc(x + radius, y + height - radius, radius, 90 * degrees, 180 * degrees);
+        cr.arc(x + radius, y + radius, radius, 180 * degrees, 270 * degrees);
+
+    def create_icon_with_number(self, icon_in, count):
+        surface = cairo.ImageSurface (cairo.FORMAT_ARGB32, icon_in.get_width(), icon_in.get_height())
+        context = cairo.Context(surface)
+
+        Gdk.cairo_set_source_pixbuf(context, icon_in, 0, 0)
+        context.paint()
+
+        context.select_font_face("Clear Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        context.set_font_size(14)
+
+        xbearing, ybearing, width, height, xadvance, yadvance = context.text_extents("{}".format(count))
+
+        if width <= 10:
+            width = 21
+            text_width = 15
+        elif width > 10 and width <= 20:
+            width = 26
+            text_width = 20
+        else:
+            width = 38
+            text_width = 31
+
+        context.set_source_rgba(199,0,0,1)
+
+        self.draw_rounded(context, surface.get_width() - width, 0, width, 20, 10)
+
+        context.fill()
+
+        context.move_to(surface.get_width() - text_width, 15)
+
+        context.set_source_rgba(255,255,255,1)
+        context.show_text("{}".format(count))
+
+        surface = context.get_target()
+        icon = Gdk.pixbuf_get_from_surface(surface, 0, 0, surface.get_width(), surface.get_height())
+
+        return icon
+        
     def __init__(self, basket, appsystem):
         Gtk.VBox.__init__(self, 0)
         self.basket = basket
@@ -516,14 +563,16 @@ class ScUpdatesView(Gtk.VBox):
         count_normal = count_normal - count_security;
 
         if (count_normal > 0):
-            icon = self.create_icon_with_number(self.appsystem.security_pixbuf, count_normal)
-            model.set(row_u, 4, icon);
+            icon_u = self.create_icon_with_number(self.appsystem.security_pixbuf, count_normal)
+            model.set(row_u, 4, icon_u);
 
         if (count_security > 0):
-            icon2 = self.create_icon_with_number(self.appsystem.other_pixbuf, count_security)
-            model.set(row_s, 4, icon2);
+            icon_s = self.create_icon_with_number(self.appsystem.other_pixbuf, count_security)
+            model.set(row_s, 4, icon_s);
 
-
+        if (count_mandatory > 0):
+            icon_m = self.create_icon_with_number(self.appsystem.other_pixbuf, count_mandatory)
+            model.set(row_m, 4, icon_m);
 
         # Disable empty rows
         for item in [row_s, row_m, row_u]:
@@ -544,27 +593,6 @@ class ScUpdatesView(Gtk.VBox):
         return False
 
     should_ignore = False
-
-    def create_icon_with_number(self, icon_in, count):
-        x = 0
-        y = 0
-        surface = cairo.ImageSurface (cairo.FORMAT_ARGB32, icon_in.get_width(), icon_in.get_height())
-        context = cairo.Context(surface)
-
-        Gdk.cairo_set_source_pixbuf(context, icon_in, 0, 0)
-        context.paint()
-
-        fontsize = 20
-        context.move_to(x, y+fontsize)
-        context.set_font_size(fontsize)
-        context.set_source_rgba(0,0,0,1)
-        context.show_text("{}".format(count))
-
-        #get the resulting pixbuf
-        surface = context.get_target()
-        icon = Gdk.pixbuf_get_from_surface(surface, 0, 0, surface.get_width(), surface.get_height())
-
-        return icon
 
     def on_model_row_changed(self, tmodel, path, titer):
         """ Handle selection changes """
