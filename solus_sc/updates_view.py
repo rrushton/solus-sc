@@ -459,6 +459,10 @@ class ScUpdatesView(Gtk.VBox):
         upgrades = pisi.api.list_upgradable()
         n_updates = len(upgrades)
 
+        count_normal = 0;
+        count_security = 0;
+        count_mandatory = 0;
+
         for item in sorted(upgrades):
             new_pkg = self.packagedb.get_package(item)
             new_version = "%s-%s" % (str(new_pkg.version),
@@ -471,8 +475,10 @@ class ScUpdatesView(Gtk.VBox):
             if new_pkg.partOf == "system.base":
                 systemBase = True
                 parent_row = row_m
+                count_mandatory += 1
             else:
                 parent_row = row_u
+                count_normal += 1
 
             if self.installdb.has_package(item):
                 old_pkg = self.installdb.get_package(item)
@@ -482,6 +488,7 @@ class ScUpdatesView(Gtk.VBox):
             if sc_obj.is_security_update() and parent_row != row_m:
                 parent_row = row_s
                 icon = PACKAGE_ICON_SECURITY
+                count_security += 1
 
             summary = str(new_pkg.summary)
             if len(summary) > 76:
@@ -504,6 +511,10 @@ class ScUpdatesView(Gtk.VBox):
                                       p_print, dlSize, icon, True, pkgSize,
                                       sc_obj])
 
+
+        if (count_normal > 0):
+            pass
+            
         # Disable empty rows
         for item in [row_s, row_m, row_u]:
             if model.iter_n_children(item) == 0:
