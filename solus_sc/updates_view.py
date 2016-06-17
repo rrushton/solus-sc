@@ -11,7 +11,7 @@
 #  (at your option) any later version.
 #
 
-from gi.repository import Gtk, GLib, GObject, Pango, GdkPixbuf
+from gi.repository import Gtk, GLib, GObject, Pango, GdkPixbuf, Gdk
 from .util import sc_format_size_local
 from operator import attrgetter
 import threading
@@ -19,6 +19,7 @@ import threading
 import pisi.api
 import os
 import re
+import cairo
 
 
 PACKAGE_ICON_SECURITY = "security-high-symbolic"
@@ -472,6 +473,7 @@ class ScUpdatesView(Gtk.VBox):
             systemBase = False
 
             icon = PACKAGE_ICON_NORMAL
+
             if new_pkg.partOf == "system.base":
                 systemBase = True
                 parent_row = row_m
@@ -511,10 +513,18 @@ class ScUpdatesView(Gtk.VBox):
                                       p_print, dlSize, icon, True, pkgSize,
                                       sc_obj])
 
+        count_normal = count_normal - count_security;
 
         if (count_normal > 0):
-            pass
-            
+            icon = self.create_icon_with_number(self.appsystem.security_pixbuf, count_normal)
+            model.set(row_u, 4, icon);
+
+        if (count_security > 0):
+            icon2 = self.create_icon_with_number(self.appsystem.other_pixbuf, count_security)
+            model.set(row_s, 4, icon2);
+
+
+
         # Disable empty rows
         for item in [row_s, row_m, row_u]:
             if model.iter_n_children(item) == 0:
@@ -534,6 +544,27 @@ class ScUpdatesView(Gtk.VBox):
         return False
 
     should_ignore = False
+
+    def create_icon_with_number(self, icon_in, count):
+        x = 0
+        y = 0
+        surface = cairo.ImageSurface (cairo.FORMAT_ARGB32, icon_in.get_width(), icon_in.get_height())
+        context = cairo.Context(surface)
+
+        Gdk.cairo_set_source_pixbuf(context, icon_in, 0, 0)
+        context.paint()
+
+        fontsize = 20
+        context.move_to(x, y+fontsize)
+        context.set_font_size(fontsize)
+        context.set_source_rgba(0,0,0,1)
+        context.show_text("{}".format(count))
+
+        #get the resulting pixbuf
+        surface = context.get_target()
+        icon = Gdk.pixbuf_get_from_surface(surface, 0, 0, surface.get_width(), surface.get_height())
+
+        return icon
 
     def on_model_row_changed(self, tmodel, path, titer):
         """ Handle selection changes """
