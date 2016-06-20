@@ -596,17 +596,17 @@ class ScUpdatesView(Gtk.VBox):
 
         count_normal = count_normal - count_security
 
-        if (count_normal > 0):
+        if count_normal > 0:
             icon_u = self.create_icon_with_number(
                 self.appsystem.security_pixbuf, count_normal)
             model.set(row_u, 4, icon_u)
 
-        if (count_security > 0):
+        if count_security > 0:
             icon_s = self.create_icon_with_number(
                 self.appsystem.other_pixbuf, count_security)
             model.set(row_s, 4, icon_s)
 
-        if (count_mandatory > 0):
+        if count_mandatory > 0:
             icon_m = self.create_icon_with_number(
                 self.appsystem.other_pixbuf, count_mandatory)
             model.set(row_m, 4, icon_m)
