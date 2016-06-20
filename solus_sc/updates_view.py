@@ -11,7 +11,7 @@
 #  (at your option) any later version.
 #
 
-from gi.repository import Gtk, GLib, GObject, Pango, GdkPixbuf, Gdk
+from gi.repository import Gtk, GLib, GObject, Pango, GdkPixbuf, Gdk, Gio
 from .util import sc_format_size_local
 from operator import attrgetter
 import threading
@@ -255,6 +255,9 @@ class ScUpdatesView(Gtk.VBox):
     basket = None
     appsystem = None
 
+    settings = Gio.Settings('org.gnome.desktop.interface')
+    font_name = settings.get_string('font-name')
+
     def perform_refresh(self, btn, wdata=None):
         self.perform_refresh_internal()
 
@@ -278,25 +281,53 @@ class ScUpdatesView(Gtk.VBox):
         GObject.idle_add(self.init_view)
 
     def draw_rounded(self, cr, x, y, width, height, radius):
-        corner_radius = height / 10.0;
-        degrees = pi / 180.0;
+        degrees = pi / 180.0
 
-        cr.arc(x + width - radius, y + radius, radius, -90 * degrees, 0 * degrees);
-        cr.arc(x + width - radius, y + height - radius, radius, 0 * degrees, 90 * degrees);
-        cr.arc(x + radius, y + height - radius, radius, 90 * degrees, 180 * degrees);
-        cr.arc(x + radius, y + radius, radius, 180 * degrees, 270 * degrees);
+        cr.arc(
+            x + width - radius,
+            y + radius, radius,
+            -90 * degrees,
+            0 * degrees)
+
+        cr.arc(
+            x + width - radius,
+            y + height - radius,
+            radius,
+            0 * degrees,
+            90 * degrees)
+
+        cr.arc(
+            x + radius,
+            y + height - radius,
+            radius,
+            90 * degrees,
+            180 * degrees)
+
+        cr.arc(
+            x + radius,
+            y + radius,
+            radius,
+            180 * degrees,
+            270 * degrees)
 
     def create_icon_with_number(self, icon_in, count):
-        surface = cairo.ImageSurface (cairo.FORMAT_ARGB32, icon_in.get_width(), icon_in.get_height())
+        surface = cairo.ImageSurface(
+            cairo.FORMAT_ARGB32,
+            icon_in.get_width(),
+            icon_in.get_height())
+
         context = cairo.Context(surface)
 
         Gdk.cairo_set_source_pixbuf(context, icon_in, 0, 0)
         context.paint()
 
-        context.select_font_face("Clear Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        context.select_font_face(
+            self.font_name,
+            cairo.FONT_SLANT_NORMAL,
+            cairo.FONT_WEIGHT_BOLD)
         context.set_font_size(14)
 
-        xbearing, ybearing, width, height, xadvance, yadvance = context.text_extents("{}".format(count))
+        xb, yb, width, height = context.text_extents("{}".format(count))[:4]
 
         if width <= 10:
             width = 21
@@ -308,22 +339,25 @@ class ScUpdatesView(Gtk.VBox):
             width = 38
             text_width = 31
 
-        context.set_source_rgba(199,0,0,1)
+        context.set_source_rgba(199, 0, 0, 1)
 
-        self.draw_rounded(context, surface.get_width() - width, 0, width, 20, 10)
+        self.draw_rounded(
+            context,
+            surface.get_width() - width, 0, width, 20, 10)
 
         context.fill()
 
         context.move_to(surface.get_width() - text_width, 15)
 
-        context.set_source_rgba(255,255,255,1)
+        context.set_source_rgba(255, 255, 255, 1)
         context.show_text("{}".format(count))
 
         surface = context.get_target()
-        icon = Gdk.pixbuf_get_from_surface(surface, 0, 0, surface.get_width(), surface.get_height())
+        icon = Gdk.pixbuf_get_from_surface(
+            surface, 0, 0, surface.get_width(), surface.get_height())
 
         return icon
-        
+
     def __init__(self, basket, appsystem):
         Gtk.VBox.__init__(self, 0)
         self.basket = basket
@@ -507,9 +541,9 @@ class ScUpdatesView(Gtk.VBox):
         upgrades = pisi.api.list_upgradable()
         n_updates = len(upgrades)
 
-        count_normal = 0;
-        count_security = 0;
-        count_mandatory = 0;
+        count_normal = 0
+        count_security = 0
+        count_mandatory = 0
 
         for item in sorted(upgrades):
             new_pkg = self.packagedb.get_package(item)
@@ -560,19 +594,22 @@ class ScUpdatesView(Gtk.VBox):
                                       p_print, dlSize, icon, True, pkgSize,
                                       sc_obj])
 
-        count_normal = count_normal - count_security;
+        count_normal = count_normal - count_security
 
         if (count_normal > 0):
-            icon_u = self.create_icon_with_number(self.appsystem.security_pixbuf, count_normal)
-            model.set(row_u, 4, icon_u);
+            icon_u = self.create_icon_with_number(
+                self.appsystem.security_pixbuf, count_normal)
+            model.set(row_u, 4, icon_u)
 
         if (count_security > 0):
-            icon_s = self.create_icon_with_number(self.appsystem.other_pixbuf, count_security)
-            model.set(row_s, 4, icon_s);
+            icon_s = self.create_icon_with_number(
+                self.appsystem.other_pixbuf, count_security)
+            model.set(row_s, 4, icon_s)
 
         if (count_mandatory > 0):
-            icon_m = self.create_icon_with_number(self.appsystem.other_pixbuf, count_mandatory)
-            model.set(row_m, 4, icon_m);
+            icon_m = self.create_icon_with_number(
+                self.appsystem.other_pixbuf, count_mandatory)
+            model.set(row_m, 4, icon_m)
 
         # Disable empty rows
         for item in [row_s, row_m, row_u]:
