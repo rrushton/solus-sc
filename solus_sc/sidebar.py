@@ -48,6 +48,18 @@ class ScSidebar(Gtk.ListBox):
                 self.queue_draw()
                 break
 
+    def set_update_count(self, count):
+        # This is kinda... ass
+        for row in self.get_children():
+            if row.get_child().row_entry == 'updates':
+                for item in row.get_children():
+                    for item2 in item.get_children():
+                        try:
+                            item2.set_text("{} ({})".format(
+                                item2.get_text(), count))
+                        except AttributeError:
+                            pass
+
     def __init__(self, owner, parent_stack):
         Gtk.ListBox.__init__(self)
 
