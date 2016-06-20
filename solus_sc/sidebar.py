@@ -21,6 +21,8 @@ class ScSidebar(Gtk.ListBox):
     size_group = None
     owner = None
 
+    update_title = "Updates"
+
     def on_row_selected(self, us, udata=None):
         """ Handle navigation for the primary view """
         row = self.get_selected_row()
@@ -56,7 +58,7 @@ class ScSidebar(Gtk.ListBox):
                     for item2 in item.get_children():
                         try:
                             item2.set_text("{} ({})".format(
-                                item2.get_text(), count))
+                                self.update_title, count))
                         except AttributeError:
                             pass
 
@@ -77,7 +79,7 @@ class ScSidebar(Gtk.ListBox):
 
         items = [
             ("home", "Home", "user-home-symbolic"),
-            ("updates", "Updates", "software-update-available-symbolic"),
+            ("updates", self.update_title, "software-update-available-symbolic"),
             ("installed", "Installed", "computer-symbolic"),
             ("3rd-party", "Third Party", "folder-download-symbolic"),
             ("search", "Search", "edit-find-symbolic"),
