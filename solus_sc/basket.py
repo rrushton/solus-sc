@@ -3,7 +3,7 @@
 #
 #  This file is part of solus-sc
 #
-#  Copyright © 2014-2016 Ikey Doherty <ikey@solus-project.com>
+#  Copyright © 2013-2016 Ikey Doherty <ikey@solus-project.com>
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -11,10 +11,11 @@
 #  (at your option) any later version.
 #
 
-from gi.repository import Gtk, GObject
+from gi.repository import Gtk, GObject, GLib
 
 import comar
 import pisi.db
+import dbus
 from pisi.operations.install import plan_install_pkg_names
 from pisi.operations.remove import plan_remove
 from pisi.operations.upgrade import plan_upgrade
@@ -32,6 +33,7 @@ class BasketView(Gtk.Revealer):
     action_bar = None
     doing_things = False
     owner = None
+    pulser = -1
 
     def is_busy(self):
         return self.doing_things
@@ -56,11 +58,12 @@ class BasketView(Gtk.Revealer):
         self.progressbar.set_fraction(0.6)
         self.progressbar.set_valign(Gtk.Align.CENTER)
 
-        self.progressbar.set_hexpand(True)
         self.progressbar.set_margin_end(20)
         self.progressbar.set_margin_top(6)
         self.progressbar.set_margin_bottom(4)
-        self.action_bar.pack_start(self.progressbar)
+        self.action_bar.pack_end(self.progressbar)
+
+        self.progressbar.set_size_request(350, -1)
 
         self.invalidate_all()
 
@@ -77,6 +80,53 @@ class BasketView(Gtk.Revealer):
 
         self.downloaded = 0
         self.current_package = None
+
+    def build_package(self, nom):
+        """ Ugly ass shit needed to get third party packages working for now.
+            Note to self: Find more elegant solution.. """
+        bus = dbus.SystemBus()
+        obj = bus.get_object("com.solus_project.eopkgassist",
+                             "/com/solus_project/EopkgAssist")
+        iface = dbus.Interface(obj, "com.solus_project.eopkgassist")
+        iface.connect_to_signal("Progress", self.do_prog)
+        self.doing_things = True
+        self.operations['::third-party::'] = 'Install {}'.format(nom)
+        self.update_ui()
+        self.emit('basket-changed', None)
+        self.pulser = GLib.timeout_add(1000.0 / 5.0, self.step_up)
+        iface.BuildPackage(nom,
+                           reply_handler=self.on_eopkg_repl,
+                           error_handler=self.on_eopkg_err)
+
+    def step_up(self):
+        self.progressbar.pulse()
+        return True
+
+    def on_eopkg_repl(self, o):
+        pass
+
+    def on_eopkg_err(self, o):
+        print("dbus error, shouldnt happen: {}".format(str(o)))
+        self.invalidate_all()
+
+    def do_prog(self, pct, message):
+        if str(message).startswith("ERROR: "):
+            content = message.split("ERROR: ")[1:]
+            d = Gtk.MessageDialog(self.owner,
+                                  Gtk.DialogFlags.DESTROY_WITH_PARENT |
+                                  Gtk.DialogFlags.MODAL,
+                                  Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
+                                  content)
+            d.run()
+            d.destroy()
+            self.doing_things = False
+            self.invalidate_all()
+            self.update_ui()
+
+        if pct == 0 and message == "DONE":
+            self.doing_things = False
+            self.invalidate_all()
+            self.update_ui()
 
     def set_progress(self, fraction, label):
         if fraction is None:
@@ -98,7 +148,12 @@ class BasketView(Gtk.Revealer):
             self.progresslabel.set_markup("{} operations pending".format(
                 self.operation_count()))
         else:
-            self.progresslabel.set_markup("One operation pending")
+            if '::third-party::' in self.operations:
+                lab = " - This may take <b>some time!</b>"
+                self.progresslabel.set_markup(
+                    self.operations['::third-party::'] + lab)
+            else:
+                self.progresslabel.set_markup("One operation pending")
         self.set_reveal_child(True)
 
     def operation_for_package(self, package):
@@ -126,7 +181,7 @@ class BasketView(Gtk.Revealer):
         self.update_ui()
 
     def update_package(self, old_package, new_package):
-        self.operations[old_package.name] = 'UPDATE'
+        self.operations[new_package.name] = 'UPDATE'
         self.update_ui()
 
     def _get_prog(self, step):
@@ -195,7 +250,7 @@ class BasketView(Gtk.Revealer):
 
                     cd = self.current_dl_package
                     if cd == 0 and self.total_packages == 0:
-                        self.set_progress("Downloading {} ({})".format(
+                        self.set_progress(prog, "Downloading {} ({})".format(
                             package, speed))
                     else:
                         disp = "Downloading {} of {}: {} ({})"
@@ -236,7 +291,9 @@ class BasketView(Gtk.Revealer):
 
     def invalidate_all(self):
         # Handle operations that finished.
-        print("HAPPEND!")
+        if self.pulser >= 0:
+            GLib.source_remove(self.pulser)
+            self.pulser = -1
         self.operations = dict()
         pisi.db.invalidate_caches()
         self.installdb = pisi.db.installdb.InstallDB()
@@ -345,7 +402,8 @@ class BasketView(Gtk.Revealer):
             if packageset == installs:
                 (pg, pkgs) = plan_install_pkg_names(packageset)
                 if len(pkgs) > len(packageset):
-                    if self.show_dialog(pkgs):
+                    p = [x for x in pkgs if x not in packageset]
+                    if self.show_dialog(p):
                         installs = packageset = pkgs
                     else:
                         # print "Not installing"
@@ -353,15 +411,17 @@ class BasketView(Gtk.Revealer):
             elif packageset == removals:
                 (pk, pkgs) = plan_remove(packageset)
                 if len(pkgs) > len(packageset):
-                    if self.show_dialog(pkgs, remove=True):
+                    p = [x for x in pkgs if x not in packageset]
+                    if self.show_dialog(p, remove=True):
                         removals = packageset = pkgs
                     else:
                         # print "Not removing"
                         continue
-            elif packageset == removals:
+            elif packageset == updates:
                 (pk, pkgs) = plan_upgrade(packageset)
                 if len(pkgs) > len(packageset):
-                    if self.show_dialog(pkgs, update=True):
+                    p = [x for x in pkgs if x not in packageset]
+                    if self.show_dialog(p, update=True):
                         updates = packageset = pkgs
                     else:
                         # print Not continuing

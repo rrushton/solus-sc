@@ -3,7 +3,7 @@
 #
 #  This file is part of solus-sc
 #
-#  Copyright © 2014-2016 Ikey Doherty <ikey@solus-project.com>
+#  Copyright © 2013-2016 Ikey Doherty <ikey@solus-project.com>
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -238,6 +238,29 @@ class LoadingPage(Gtk.VBox):
         self.label.set_property("margin", 20)
 
 
+class UpdatingPage(Gtk.VBox):
+    """ Simple loading page, nothing fancy. """
+
+    spinner = None
+
+    def __init__(self):
+        Gtk.VBox.__init__(self)
+
+        self.set_valign(Gtk.Align.CENTER)
+        self.set_halign(Gtk.Align.CENTER)
+        self.spinner = Gtk.Spinner()
+        self.spinner.set_size_request(-1, 64)
+        self.spinner.start()
+        self.label = Gtk.Label("<big>Please check back later, "
+                               "updates are now applying" + u"…"
+                               "</big>")
+        self.label.set_use_markup(True)
+
+        self.pack_start(self.spinner, True, True, 0)
+        self.pack_start(self.label, False, False, 0)
+        self.label.set_property("margin", 20)
+
+
 class ScUpdatesView(Gtk.VBox):
 
     installdb = None
@@ -247,6 +270,7 @@ class ScUpdatesView(Gtk.VBox):
     toolbar = None
     selection_label = None
     view_details = None
+    update_btn = None
 
     selected_object = None
 
@@ -254,6 +278,8 @@ class ScUpdatesView(Gtk.VBox):
     load_page = None
     basket = None
     appsystem = None
+    updating_page = None
+    is_updating = False
 
     settings = Gio.Settings('org.gnome.desktop.interface')
     font_name = settings.get_string('font-name')
@@ -276,7 +302,6 @@ class ScUpdatesView(Gtk.VBox):
         return False
 
     def load_updates(self):
-        print("I AM LOADING TEH UPDATES")
         self.basket.invalidate_all()
         GObject.idle_add(self.init_view)
 
@@ -362,6 +387,7 @@ class ScUpdatesView(Gtk.VBox):
         Gtk.VBox.__init__(self, 0)
         self.basket = basket
         self.appsystem = appsystem
+        self.basket.connect("basket-changed", self.on_basket_changed)
 
         self.stack = Gtk.Stack()
         t = Gtk.StackTransitionType.CROSSFADE
@@ -477,8 +503,9 @@ class ScUpdatesView(Gtk.VBox):
         sep.set_expand(True)
         self.toolbar.add(sep)
 
-        refresh_button = Gtk.ToolButton(None, "Check for updates")
-        refresh_button.set_is_important(True)
+        refresh_button = Gtk.ToolButton(None, None)
+        refresh_button.set_icon_name("view-refresh-symbolic")
+        refresh_button.set_tooltip_text("Check for new updates")
         refresh_button.set_label("Check for updates")
         refresh_button.connect("clicked", self.perform_refresh)
         self.toolbar.add(refresh_button)
@@ -489,8 +516,47 @@ class ScUpdatesView(Gtk.VBox):
         self.view_details.set_sensitive(False)
         self.view_details.set_tooltip_text("Details" + u"…")
         self.view_details.get_style_context().add_class("flat")
-        self.view_details.connect('clicked', self.on_details)
+        self.view_details.connect("clicked", self.on_details)
         self.toolbar.add(self.view_details)
+
+        # Apply the updates
+        self.update_btn = Gtk.ToolButton(None, "Update Selected")
+        self.update_btn.set_label("Update Selected")
+        self.update_btn.set_is_important(True)
+        self.update_btn.connect("clicked", self.on_update)
+        self.toolbar.add(self.update_btn)
+        self.update_btn.set_sensitive(0)
+
+        self.updating_page = UpdatingPage()
+        self.stack.add_named(self.updating_page, "updating")
+
+    def on_basket_changed(self, basket, udata=None):
+        """ Just applied updates, so lets refresh repos and update list """
+        if not self.is_updating:
+            return
+        if basket.is_busy():
+            return
+        self.is_updating = False
+        self.updating_page.spinner.stop()
+        GLib.idle_add(self.refresh_repos)
+
+    def on_update(self, b, wdata=None):
+        """ Actually go ahead and do the update """
+        model = self.tview.get_model()
+        # root row can be skipped in each instance
+        for row in model:
+            for sprog in row.iterchildren():
+                checked = sprog[0]
+                obj = sprog[-1]
+                if not checked:
+                    continue
+                self.basket.update_package(obj.old_pkg, obj.new_pkg)
+        # Move to the updating page
+        self.stack.set_visible_child_name("updating")
+        self.updating_page.spinner.start()
+        self.is_updating = True
+        self.queue_draw()
+        self.basket.apply_operations()
 
     def on_details(self, b, wdata=None):
         lewin = self.get_toplevel()
@@ -531,8 +597,6 @@ class ScUpdatesView(Gtk.VBox):
                                     self.appsystem.other_pixbuf,
                                     True, 0, None])
 
-        self.tview.set_model(model)
-
         # Need a shared context for these guys
         self.installdb = self.basket.installdb
         self.packagedb = self.basket.packagedb
@@ -545,7 +609,19 @@ class ScUpdatesView(Gtk.VBox):
         count_security = 0
         count_mandatory = 0
 
+        obsol = pisi.api.list_obsoleted()
+        replc = pisi.api.list_replaces()
+
         for item in sorted(upgrades):
+
+            old_item = item
+            if item in obsol:
+                if item not in replc:
+                    # No valid replacement, skip it
+                    continue
+                # Chose the replacement
+                item = replc[item][0]
+
             new_pkg = self.packagedb.get_package(item)
             new_version = "%s-%s" % (str(new_pkg.version),
                                      str(new_pkg.release))
@@ -586,7 +662,12 @@ class ScUpdatesView(Gtk.VBox):
             pkg_name = GLib.markup_escape_text(pkg_name)
             summary = GLib.markup_escape_text(summary)
 
-            p_print = "%s - <small>%s</small>\n%s" % (pkg_name,
+            if old_item != item:
+                pref = "%s (replaces %s)" % (pkg_name, old_item)
+            else:
+                pref = "%s" % (pkg_name)
+
+            p_print = "%s - <small>%s</small>\n%s" % (pref,
                                                       new_version,
                                                       summary)
 
@@ -618,15 +699,16 @@ class ScUpdatesView(Gtk.VBox):
                 model.set(item, 1, False)
                 model.set(item, 5, False)
 
+        Gdk.threads_enter()
+        self.tview.set_model(model)
         # Hook up events so we know what's going on (4 non blondes.)
         self.update_from_selection()
         model.connect_after('row-changed', self.on_model_row_changed)
         if n_updates < 1:
-            print("Nuh uh, only {} updates".format(n_updates))
             self.stack.set_visible_child_name("check")
         else:
-            print("Ermagahd {} updates".format(n_updates))
             self.stack.set_visible_child_name("updates")
+        Gdk.threads_leave()
         return False
 
     should_ignore = False
@@ -701,10 +783,12 @@ class ScUpdatesView(Gtk.VBox):
         if total_update == 0:
             self.selection_label.set_text("{} of {} updates selected".format(
                 total_update, total_available))
+            self.update_btn.set_sensitive(False)
             return
         dlSize = sc_format_size_local(total_size, True)
         newLabel = "{} of {} updates selected ({} to download)".format(
                    total_update, total_available, dlSize)
+        self.update_btn.set_sensitive(True)
         self.selection_label.set_text(newLabel)
 
     def on_row_activated(self, tview, path, column, udata=None):

@@ -1,0 +1,5 @@
+#!/bin/bash
+
+source /usr/share/defaults/etc/profile
+
+python2.7 -m eopkg_assist.main

@@ -3,7 +3,7 @@
 #
 #  This file is part of solus-sc
 #
-#  Copyright © 2014-2016 Ikey Doherty <ikey@solus-project.com>
+#  Copyright © 2013-2016 Ikey Doherty <ikey@solus-project.com>
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -68,7 +68,7 @@ class ScGroupButton(Gtk.Button):
 
         # count the components
         kids = db.get_group_components(group.name)
-        info_label = Gtk.Label("%s sections" % len(kids))
+        info_label = Gtk.Label("%s categories" % len(kids))
         info_label.set_halign(Gtk.Align.START)
         info_label.get_style_context().add_class("info-label")
         info_label.get_style_context().add_class("dim-label")

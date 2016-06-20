@@ -3,7 +3,7 @@
 #
 #  This file is part of solus-sc
 #
-#  Copyright © 2014-2016 Ikey Doherty <ikey@solus-project.com>
+#  Copyright © 2013-2016 Ikey Doherty <ikey@solus-project.com>
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@ from .sidebar import ScSidebar
 from .updates_view import ScUpdatesView
 from .basket import BasketView
 from .search import ScSearchView
+from .thirdparty import ThirdPartyView
 from gi.repository import Gtk, GLib
 import sys
 import threading
@@ -45,6 +46,7 @@ class ScMainWindow(Gtk.ApplicationWindow):
     package_view = None
     updates_view = None
     search_view = None
+    third_party = None
 
     prev_button = None
 
@@ -70,6 +72,8 @@ class ScMainWindow(Gtk.ApplicationWindow):
             self.package_view.handle_back()
         elif nom == "home":
             self.groups_view.handle_back()
+        elif nom == "search":
+            self.search_view.handle_back()
         else:
             print("Shouldn't be happening boss")
 
@@ -83,6 +87,8 @@ class ScMainWindow(Gtk.ApplicationWindow):
             sensitive = self.package_view.can_back()
         elif nom == "home":
             sensitive = self.groups_view.can_back()
+        elif nom == "search":
+            sensitive = self.search_view.can_back()
         self.set_can_back(sensitive)
 
     def init_children(self):
@@ -170,7 +176,8 @@ class ScMainWindow(Gtk.ApplicationWindow):
 
         # These guys aren't yet implemented
         self.stack.add_titled(self.package_view, "installed", "Installed")
-        self.stack.add_titled(ScPlaceholderBox(), "3rd-party", "Third Party")
+        self.third_party = ThirdPartyView(self)
+        self.stack.add_titled(self.third_party, "3rd-party", "Third Party")
 
         # Search view
         self.search_view = ScSearchView(self)

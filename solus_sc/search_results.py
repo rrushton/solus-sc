@@ -12,6 +12,7 @@
 #
 
 from gi.repository import Gtk, GLib, GdkPixbuf
+import difflib
 
 
 """ enum for the model fields """
@@ -33,8 +34,8 @@ class LoadingPage(Gtk.VBox):
         self.set_halign(Gtk.Align.CENTER)
         self.spinner = Gtk.Spinner()
         self.spinner.set_size_request(-1, 64)
-        self.spinner.start()
-        lab = "Switching to the B-side of the cassette" + u"…"
+        # self.spinner.start()
+        lab = "Concentrating really hard" + u"…"
         self.label = Gtk.Label("<big>{}</big>".format(lab))
         self.label.set_use_markup(True)
 
@@ -43,7 +44,43 @@ class LoadingPage(Gtk.VBox):
         self.label.set_property("margin", 20)
 
 
-class ScAvailableView(Gtk.VBox):
+class BlankPage(Gtk.VBox):
+    """ Simple placeholder page, nothing fancy. """
+
+    label = None
+
+    def __init__(self):
+        Gtk.VBox.__init__(self)
+
+        self.set_valign(Gtk.Align.CENTER)
+        self.set_halign(Gtk.Align.CENTER)
+        self.label = Gtk.Label("<big>{}</big>".format(
+                               "Type a query to get started"))
+        self.label.set_use_markup(True)
+
+        self.pack_start(self.label, False, False, 0)
+        self.label.set_property("margin", 20)
+
+
+class NotFoundPage(Gtk.VBox):
+    """ Found no search results. """
+
+    label = None
+
+    def __init__(self):
+        Gtk.VBox.__init__(self)
+
+        self.set_valign(Gtk.Align.CENTER)
+        self.set_halign(Gtk.Align.CENTER)
+        self.label = Gtk.Label("<big>{}</big>".format(
+                               "No results found"))
+        self.label.set_use_markup(True)
+
+        self.pack_start(self.label, False, False, 0)
+        self.label.set_property("margin", 20)
+
+
+class ScSearchResults(Gtk.VBox):
 
     scroll = None
     tview = None
@@ -52,24 +89,35 @@ class ScAvailableView(Gtk.VBox):
     stack = None
     load_page = None
     owner = None
-    groups_view = None
     stack = None
     component = None
+    empty_page = None
+    notfound_page = None
+    search_page = None
 
-    def __init__(self, groups_view, owner):
+    def __init__(self, search_page, owner):
         Gtk.VBox.__init__(self, 0)
         self.basket = owner.basket
         self.appsystem = owner.appsystem
         self.owner = owner
-        self.groups_view = groups_view
+        self.search_page = search_page
 
         self.stack = Gtk.Stack()
         t = Gtk.StackTransitionType.SLIDE_LEFT_RIGHT
         self.stack.set_transition_type(t)
         self.pack_start(self.stack, True, True, 0)
 
+        # Not found/ search for somethin pls
+        self.empty_page = BlankPage()
+        self.stack.add_named(self.empty_page, "empty")
+
+        # Loading results
         self.load_page = LoadingPage()
         self.stack.add_named(self.load_page, "loading")
+
+        # not found
+        self.notfound_page = NotFoundPage()
+        self.stack.add_named(self.notfound_page, "not-found")
 
         self.scroll = Gtk.ScrolledWindow(None, None)
         self.scroll.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
@@ -110,6 +158,8 @@ class ScAvailableView(Gtk.VBox):
         self.tview.append_column(column)
         ren.set_property("xalign", 1.0)
 
+        self.stack.set_visible_child_name("empty")
+
     def on_row_activated(self, tview, path, column, udata=None):
         """ User clicked a row, now try to load the page """
         model = tview.get_model()
@@ -117,24 +167,38 @@ class ScAvailableView(Gtk.VBox):
 
         pkg_name = row[INDEX_FIELD_NAME]
 
-        pkg = self.basket.packagedb.get_package(pkg_name)
-        self.groups_view.select_details(pkg)
-
-    def set_component(self, component):
-        if self.component and self.component == component:
-            return
-        self.component = component
-        model = Gtk.ListStore(str, str, GdkPixbuf.Pixbuf, str)
-        model.set_sort_column_id(1, Gtk.SortType.ASCENDING)
-
-        packages = self.basket.componentdb.get_packages(component.name)
-
-        # Take consideration
-        if len(packages) >= 40:
-            self.reset()
-
-        for pkg_name in packages:
+        if self.basket.packagedb.has_package(pkg_name):
             pkg = self.basket.packagedb.get_package(pkg_name)
+        else:
+            pkg = self.basket.installdb.get_package(pkg_name)
+        self.search_page.select_details(pkg)
+
+    def set_search_term(self, term):
+        if term.strip() == "":
+            return
+        model = Gtk.ListStore(str, str, GdkPixbuf.Pixbuf, str)
+
+        self.reset()
+
+        try:
+            s_packages = set(self.basket.packagedb.search_package([term]))
+            s_packages.update(self.basket.installdb.search_package([term]))
+        except Exception as e:
+            # Invalid regex, basically, from someone smashing FIREFOX????
+            print(e)
+            self.stack.set_visible_child_name("not-found")
+            self.load_page.spinner.stop()
+            return
+
+        leaders = difflib.get_close_matches(term.lower(),
+                                            s_packages, cutoff=0.5)
+        packages = leaders
+        packages.extend(sorted([x for x in s_packages if x not in leaders]))
+        for pkg_name in packages:
+            if self.basket.packagedb.has_package(pkg_name):
+                pkg = self.basket.packagedb.get_package(pkg_name)
+            else:
+                pkg = self.basket.installdb.get_package(pkg_name)
 
             summary = self.appsystem.get_summary(pkg)
             summary = str(summary)
@@ -154,12 +218,21 @@ class ScAvailableView(Gtk.VBox):
             while (Gtk.events_pending()):
                 Gtk.main_iteration()
 
+        if len(packages) == 0:
+            self.stack.set_visible_child_name("not-found")
+        else:
+            self.stack.set_visible_child_name("available")
+
         self.tview.set_model(model)
-        self.stack.set_visible_child_name("available")
         self.load_page.spinner.stop()
 
     def reset(self):
         self.tview.set_model(None)
         self.stack.set_visible_child_name("loading")
         self.load_page.spinner.start()
+        self.queue_draw()
+
+    def clear_view(self):
+        self.tview.set_model(None)
+        self.stack.set_visible_child_name("empty")
         self.queue_draw()
